@@ -76,12 +76,6 @@ impl AreaEx {
     }
 }
 
-fn main() {
-    if let Ok(mut pci) = read("data/kota_circuit3.ply") {
-        proc2(&mut pci);
-    }
-}
-
 fn proc2(pci: &mut PointCloudInfo) {
     // divide into groups BEGIN
     let xcn = (pci.x1 - pci.x0) / BOXWD;
@@ -255,7 +249,7 @@ fn write(f: &str, pntx: &Vec<Point>) {
     let hd = format!(
         r###"ply
 format ascii 1.0
-comment Created by TUENG Special Topic 2024-03-28
+comment Created by Thammasat Thonggamgaew 2024-03-28
 element vertex {}
 property double x
 property double y
@@ -348,4 +342,10 @@ fn read(f: &str) -> io::Result<PointCloudInfo> {
         y1,
         grpm,
     })
+}
+
+fn main() {
+    if let Ok(mut pci) = read("data/kota_circuit3.ply") {
+        proc2(&mut pci);
+    }
 }
