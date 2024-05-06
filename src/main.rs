@@ -18,6 +18,9 @@ struct Point {
     x: f32,
     y: f32,
     z: f32,
+    nx: f32,
+    ny: f32,
+    nz: f32,
     r: u8,
     g: u8,
     b: u8,
@@ -240,7 +243,7 @@ fn proc2(pci: &mut PointCloudInfo) {
             }
         }
     }
-    write("data/kota-3.ply", &pnts);
+    write("data/kota-4.ply", &pnts);
     print!("FIN {}\n", cn);
 }
 
@@ -249,11 +252,14 @@ fn write(f: &str, pntx: &Vec<Point>) {
     let hd = format!(
         r###"ply
 format ascii 1.0
-comment Created by Thammasat Thonggamgaew 2024-03-28
+comment Created by Open3D
 element vertex {}
 property double x
 property double y
 property double z
+property double nx
+property double ny
+property double nz
 property uchar red
 property uchar green
 property uchar blue
@@ -261,11 +267,15 @@ end_header
 "###,
         pntx.len()
     );
+
     if let Ok(file) = File::create(f) {
         let mut file = BufWriter::new(file);
         file.write_all(hd.as_bytes()).unwrap();
         for p in pntx {
-            let l = format!("{} {} {} {} {} {}\n", p.x, p.y, p.z, p.r, p.g, p.b);
+            let l = format!(
+                "{} {} {} {} {} {} {} {} {}\n",
+                p.x, p.y, p.z, p.nx, p.ny, p.nz, p.r, p.g, p.b
+            );
             file.write_all(l.as_bytes()).unwrap();
         }
     }
@@ -274,65 +284,74 @@ end_header
 fn read(f: &str) -> io::Result<PointCloudInfo> {
     let file = File::open(f)?;
     let reader = BufReader::new(file);
-    let mut pnts = Vec::new();
-    let mut pntx = Vec::new();
 
-    let (mut x0, mut x1, mut y0, mut y1, mut z0, mut z1) =
-        (0_f32, 0_f32, 0_f32, 0_f32, 0_f32, 0_f32);
+    // Provide explicit type annotations for `pnts`
+    let mut pnts: Vec<(f32, f32, f32, f32, f32, f32, u8, u8, u8, f32)> = Vec::new();
+    let mut pntx: Vec<Point> = Vec::new();
+
+    let (mut x0, mut x1, mut y0, mut y1) = (0_f32, 0_f32, 0_f32, 0_f32);
+    let mut first_line = true;
+
     for line in reader.lines() {
         if let Ok(line) = line {
-            let line = line.as_str();
-            let parts = line.split(" ");
-            let wds = parts.collect::<Vec<&str>>();
-            if wds.len() == 6 {
-                if let (Ok(x), Ok(y), Ok(z), Ok(r), Ok(g), Ok(b)) = (
-                    wds[0].parse::<f32>(),
-                    wds[1].parse::<f32>(),
-                    wds[2].parse::<f32>(),
-                    wds[3].parse::<u8>(),
-                    wds[4].parse::<u8>(),
-                    wds[5].parse::<u8>(),
+            let parts = line.split_whitespace().collect::<Vec<&str>>();
+
+            // Skip non-data header lines
+            if first_line {
+                first_line = false;
+                continue;
+            }
+
+            if parts.len() == 9 {
+                // Parse normal vector (nx, ny, nz), point coordinates (x, y, z), and color (r, g, b)
+                if let (Ok(x), Ok(y), Ok(z), Ok(nx), Ok(ny), Ok(nz), Ok(r), Ok(g), Ok(b)) = (
+                    parts[0].parse::<f32>(),
+                    parts[1].parse::<f32>(),
+                    parts[2].parse::<f32>(),
+                    parts[3].parse::<f32>(),
+                    parts[4].parse::<f32>(),
+                    parts[5].parse::<f32>(),
+                    parts[6].parse::<u8>(),
+                    parts[7].parse::<u8>(),
+                    parts[8].parse::<u8>(),
                 ) {
-                    if pnts.len() == 0 {
+                    if pnts.is_empty() {
                         x0 = x;
                         x1 = x;
                         y0 = y;
                         y1 = y;
-                        z0 = z;
-                        z1 = z;
                     } else {
                         x0 = if x < x0 { x } else { x0 };
-                        y0 = if y < y0 { y } else { y0 };
-                        z0 = if z < z0 { z } else { z0 };
                         x1 = if x > x1 { x } else { x1 };
+                        y0 = if y < y0 { y } else { y0 };
                         y1 = if y > y1 { y } else { y1 };
-                        z1 = if z > z1 { z } else { z1 };
                     }
+
+                    // Compute the hue from RGB
                     let rgb = Rgb::from(r as f32, g as f32, b as f32);
-                    let hue = rgb.get_hue();
-                    let hue = if hue > HUEXX { hue - 365.0 } else { hue };
-                    pnts.push((x, y, z, r, g, b, hue));
+                    let mut hue = rgb.get_hue();
+                    hue = if hue > 365.0 - 5.0 { hue - 365.0 } else { hue };
+
+                    pnts.push((x, y, z, nx, ny, nz, r, g, b, hue));
                     pntx.push(Point {
                         x,
                         y,
                         z,
+                        nx,
+                        ny,
+                        nz,
                         r,
                         g,
                         b,
                         hue,
                     });
-                    //print!("{},{},{}\n", x, y, z);
                 } else {
-                    print!("NG.3\n");
+                    println!("Error parsing point data");
                 }
-            } else if wds.len() == 3 && wds[0] == "element" && wds[1] == "vertex" {
-                let cnt = wds[2].parse::<usize>().unwrap();
-                pnts = Vec::with_capacity(cnt);
-                pntx = Vec::with_capacity(cnt);
-                //print!("cap: {}\n", cnt);
             }
         }
     }
+
     let grpm = HashMap::new();
     Ok(PointCloudInfo {
         pntx,
@@ -344,8 +363,9 @@ fn read(f: &str) -> io::Result<PointCloudInfo> {
     })
 }
 
+
 fn main() {
-    if let Ok(mut pci) = read("data/kota_circuit3.ply") {
+    if let Ok(mut pci) = read("data/kota_circuit4.ply") {
         proc2(&mut pci);
     }
 }
