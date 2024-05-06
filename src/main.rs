@@ -1,8 +1,8 @@
 use colors_transform::{Color, Rgb};
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{self, prelude::*, BufReader};
-use std::io::{BufWriter, Write};
+use std::io::{self, prelude::*, BufReader, BufWriter, Write};
+use std::f32::consts::PI;
 
 struct PointCloudInfo {
     pntx: Vec<Point>,
@@ -79,8 +79,33 @@ impl AreaEx {
     }
 }
 
+fn angle_with_vertical(normal: &[f32; 3]) -> f32 {
+    // Vertical axis is along z: [0, 0, 1]
+    let vertical = [0.0, 0.0, 1.0];
+    let dot_product = normal[0] * vertical[0] + normal[1] * vertical[1] + normal[2] * vertical[2];
+    let magnitude_normal = (normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]).sqrt();
+    let magnitude_vertical = 1.0; // The length of [0, 0, 1] is always 1
+
+    let cosine_angle = dot_product / (magnitude_normal * magnitude_vertical);
+    cosine_angle.acos() // Returns the angle in radians
+}
+
 fn proc2(pci: &mut PointCloudInfo) {
-    // divide into groups BEGIN
+    // Step 1: Filter points based on the angle with the vertical
+    let angle_threshold = PI / 6.0; // 30 degrees in radians
+    let mut filtered_pntx = Vec::new();
+
+    for point in &pci.pntx {
+        let normal = [point.nx, point.ny, point.nz];
+        if angle_with_vertical(&normal) < angle_threshold {
+            filtered_pntx.push(point.clone());
+        }
+    }
+
+    // Use filtered points instead of the original ones
+    pci.pntx = filtered_pntx;
+
+    // Step 2: Group the filtered points
     let xcn = (pci.x1 - pci.x0) / BOXWD;
     let ycn = (pci.y1 - pci.y0) / BOXWD;
     let xcn = xcn as usize + 1;
@@ -98,9 +123,9 @@ fn proc2(pci: &mut PointCloudInfo) {
             pci.grpm.insert(gk, PointCloudGrp { xi, yi, memb });
         }
     }
-    print!("pci g: {}\n", pci.grpm.len());
-    print!("xn:{} yn:{}\n", xcn, ycn);
-
+    println!("pci g: {}\n", pci.grpm.len());
+    println!("xn:{} yn:{}\n", xcn, ycn);
+    
     let mut gszm = HashMap::new();
     for (_k, pcg) in &pci.grpm {
         let cn = pcg.memb.len();
@@ -243,7 +268,8 @@ fn proc2(pci: &mut PointCloudInfo) {
             }
         }
     }
-    write("data/kota-4.ply", &pnts);
+
+    write("data/kota.ply", &pnts);
     print!("FIN {}\n", cn);
 }
 
@@ -252,7 +278,7 @@ fn write(f: &str, pntx: &Vec<Point>) {
     let hd = format!(
         r###"ply
 format ascii 1.0
-comment Created by Open3D
+comment Created by Pond
 element vertex {}
 property double x
 property double y
@@ -365,7 +391,7 @@ fn read(f: &str) -> io::Result<PointCloudInfo> {
 
 
 fn main() {
-    if let Ok(mut pci) = read("data/kota_circuit4.ply") {
+    if let Ok(mut pci) = read("data/kota_for_detect.ply") {
         proc2(&mut pci);
     }
 }
